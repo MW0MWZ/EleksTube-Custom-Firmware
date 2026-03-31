@@ -1,0 +1,145 @@
+name: Build and Release Firmware
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Configure ESP32 board support
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls \
+            https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Install required libraries
+        run: |
+          arduino-cli lib install "TFT_eSPI"
+          arduino-cli lib install "Adafruit NeoPixel"
+          arduino-cli lib install "Time"
+          arduino-cli lib install "DS1307RTC"
+          arduino-cli lib install "Rtc by Makuna"
+          arduino-cli lib install "ArduinoJson"
+
+      - name: Configure TFT_eSPI
+        run: |
+          TFTESPI_DIR=$(arduino-cli lib list --format json | python3 -c "
+          import json, sys
+          for lib in json.load(sys.stdin)['installed_libraries']:
+              if lib['library']['name'] == 'TFT_eSPI':
+                  print(lib['library']['install_dir'])
+                  break
+          ")
+          echo '#include "GLOBAL_DEFINES.h"' > "$TFTESPI_DIR/User_Setup.h"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Inject version into firmware
+        run: |
+          VERSION="EleksTubeIPS ${{ steps.version.outputs.tag }}"
+          sed -i "s/^#define FIRMWARE_VERSION.*/#define FIRMWARE_VERSION    \"${VERSION}\"/" EleksTubeIPS/USER_DEFINES.h
+          grep FIRMWARE_VERSION EleksTubeIPS/USER_DEFINES.h
+
+      - name: Compile firmware
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32:PartitionScheme=custom \
+            --output-dir build \
+            EleksTubeIPS/
+
+      - name: Build SPIFFS image
+        run: |
+          MKSPIFFS=$(find ~/.arduino15/packages/esp32/tools/mkspiffs -name mkspiffs -type f | head -1)
+          $MKSPIFFS -c EleksTubeIPS/data -b 4096 -p 256 -s 0x120000 build/spiffs.bin
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "EleksTubeIPS ${{ steps.version.outputs.tag }}"
+          body: |
+            ## EleksTubeIPS ${{ steps.version.outputs.tag }}
+
+            ### Files
+            - `EleksTubeIPS.ino.bin` — Firmware binary (flash via OTA or USB)
+            - `spiffs.bin` — Clock face images (flash via USB only)
+
+            ### OTA Update
+            1. Open the clock's web dashboard
+            2. Go to **Firmware Update**
+            3. Select `EleksTubeIPS.ino.bin` and click **Upload & Install**
+            4. The clock will reboot with the new firmware
+
+            ### USB Flash
+            ```bash
+            arduino-cli upload -p PORT --fqbn esp32:esp32:esp32:PartitionScheme=custom --input-dir build EleksTubeIPS/
+            esptool.py --chip esp32 --port PORT --baud 460800 write_flash -z 0x2D0000 build/spiffs.bin
+            ```
+          files: |
+            build/EleksTubeIPS.ino.bin
+            build/spiffs.bin
+
+      - name: Clean up old releases (keep latest 3)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            const sorted = releases.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            for (const release of sorted.slice(3)) {
+              console.log(`Deleting release: ${release.tag_name}`);
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id
+              });
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `tags/${release.tag_name}`
+                });
+                console.log(`Deleted tag: ${release.tag_name}`);
+              } catch (e) {
+                console.log(`Tag ${release.tag_name} already deleted or not found`);
+              }
+            }
+
+      - name: Clean up old workflow runs (keep latest 3)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: { workflow_runs } } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-release.yml',
+              per_page: 100
+            });
+            const sorted = workflow_runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            for (const run of sorted.slice(3)) {
+              console.log(`Deleting run: ${run.id} (${run.head_branch})`);
+              await github.rest.actions.deleteWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: run.id
+              });
+            }
