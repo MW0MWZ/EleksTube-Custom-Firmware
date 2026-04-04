@@ -9,6 +9,7 @@
 #include "TFTs.h"
 #include "WifiManager.h"
 #include <miniz.h>
+#include <math.h>
 
 void TFTs::begin() {
   // Initialize the 74HC595 shift register, then select ALL displays so the
@@ -31,6 +32,40 @@ void TFTs::begin() {
 
   // Scan SPIFFS to find how many clock face sets are available
   NumberOfClockFaces = CountNumberOfClockFaces();
+}
+
+// Precompute the 3x3 RGB hue rotation matrix for a given angle.
+// The rotation is around the grey axis (1,1,1) in RGB colour space,
+// which shifts hue while preserving luminance. Black/white pixels
+// are unaffected (no saturation to rotate).
+//
+// Matrix entries are stored as Q8 fixed-point: multiply by the entry
+// then right-shift 8 to get the result. This avoids floating-point
+// math in the per-pixel inner loop (32,400 pixels per image).
+void TFTs::computeHueMatrix(uint16_t angle_deg) {
+  if (angle_deg == 0 || angle_deg >= 360) {
+    // Identity matrix — no rotation
+    hue_matrix[0] = 256; hue_matrix[1] = 0;   hue_matrix[2] = 0;
+    hue_matrix[3] = 0;   hue_matrix[4] = 256; hue_matrix[5] = 0;
+    hue_matrix[6] = 0;   hue_matrix[7] = 0;   hue_matrix[8] = 256;
+    hue_shift = 0;
+    return;
+  }
+  float rad = angle_deg * M_PI / 180.0f;
+  float cosA = cosf(rad);
+  float sinA = sinf(rad);
+  float third = (1.0f - cosA) / 3.0f;
+  float sqrt_third = sinA * sqrtf(1.0f / 3.0f);
+
+  hue_matrix[0] = (int16_t)((cosA + third) * 256.0f);
+  hue_matrix[1] = (int16_t)((third - sqrt_third) * 256.0f);
+  hue_matrix[2] = (int16_t)((third + sqrt_third) * 256.0f);
+  hue_matrix[3] = (int16_t)((third + sqrt_third) * 256.0f);
+  hue_matrix[4] = (int16_t)((cosA + third) * 256.0f);
+  hue_matrix[5] = (int16_t)((third - sqrt_third) * 256.0f);
+  hue_matrix[6] = (int16_t)((third - sqrt_third) * 256.0f);
+  hue_matrix[7] = (int16_t)((third + sqrt_third) * 256.0f);
+  hue_matrix[8] = (int16_t)((cosA + third) * 256.0f);
 }
 
 void TFTs::clear() {
@@ -256,6 +291,18 @@ bool TFTs::LoadImageIntoBuffer(uint8_t file_index) {
         b = c; g = c >> 8; r = c >> 16;
       }
 
+      // --- Hue rotation ---
+      // Apply the precomputed RGB rotation matrix (Q8 fixed-point).
+      // int32_t intermediates prevent overflow (max: 3 * 512 * 255).
+      if (hue_shift != 0) {
+        int32_t nr = ((int32_t)hue_matrix[0]*r + (int32_t)hue_matrix[1]*g + (int32_t)hue_matrix[2]*b) >> 8;
+        int32_t ng = ((int32_t)hue_matrix[3]*r + (int32_t)hue_matrix[4]*g + (int32_t)hue_matrix[5]*b) >> 8;
+        int32_t nb = ((int32_t)hue_matrix[6]*r + (int32_t)hue_matrix[7]*g + (int32_t)hue_matrix[8]*b) >> 8;
+        r = nr < 0 ? 0 : (nr > 255 ? 255 : nr);
+        g = ng < 0 ? 0 : (ng > 255 ? 255 : ng);
+        b = nb < 0 ? 0 : (nb > 255 ? 255 : nb);
+      }
+
       // --- Pixel dimming ---
       // Multiply each channel by dimming/256 using integer math.
       // dimming=255 means ~99.6% brightness (effectively full), dimming=0 = black.
@@ -322,17 +369,27 @@ void TFTs::FillBufferFromRGB565(const uint8_t *pixels, int16_t w, int16_t h) {
   for (int16_t row = 0; row < h; row++) {
     for (int16_t col = 0; col < w; col++) {
       int ofs = (row * w + col) * 2;
-      if (dimming == 255) {
+      if (dimming == 255 && hue_shift == 0) {
         output_buffer[row + y][col + x] = (pixels[ofs + 1] << 8) | pixels[ofs];
       } else {
         uint8_t PixM = pixels[ofs + 1];
         uint8_t PixL = pixels[ofs];
-        uint16_t r = (PixM) & 0xF8;
-        uint16_t g = ((PixM << 5) | (PixL >> 3)) & 0xFC;
-        uint16_t b = (PixL << 3) & 0xF8;
-        r = (r * dimming) >> 8;
-        g = (g * dimming) >> 8;
-        b = (b * dimming) >> 8;
+        int16_t r = (PixM) & 0xF8;
+        int16_t g = ((PixM << 5) | (PixL >> 3)) & 0xFC;
+        int16_t b = (PixL << 3) & 0xF8;
+        if (hue_shift != 0) {
+          int32_t nr = ((int32_t)hue_matrix[0]*r + (int32_t)hue_matrix[1]*g + (int32_t)hue_matrix[2]*b) >> 8;
+          int32_t ng = ((int32_t)hue_matrix[3]*r + (int32_t)hue_matrix[4]*g + (int32_t)hue_matrix[5]*b) >> 8;
+          int32_t nb = ((int32_t)hue_matrix[6]*r + (int32_t)hue_matrix[7]*g + (int32_t)hue_matrix[8]*b) >> 8;
+          r = nr < 0 ? 0 : (nr > 255 ? 255 : nr);
+          g = ng < 0 ? 0 : (ng > 255 ? 255 : ng);
+          b = nb < 0 ? 0 : (nb > 255 ? 255 : nb);
+        }
+        if (dimming < 255) {
+          r = (r * dimming) >> 8;
+          g = (g * dimming) >> 8;
+          b = (b * dimming) >> 8;
+        }
         output_buffer[row + y][col + x] = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
       }
     }
@@ -399,19 +456,29 @@ bool TFTs::LoadImageIntoBuffer(uint8_t file_index) {
       return false;
     }
 
-    // The raw RGB565 bytes are now in output_buffer. If dimming is needed,
-    // we must unpack/scale/repack each pixel in-place.
-    if (dimming != 255) {
+    // The raw RGB565 bytes are now in output_buffer. If dimming or hue
+    // rotation is needed, unpack/transform/repack each pixel in-place.
+    if (dimming != 255 || hue_shift != 0) {
       uint8_t *raw = (uint8_t *)output_buffer;
       for (size_t i = 0; i < raw_size; i += 2) {
         uint8_t lo = raw[i];
         uint8_t hi = raw[i + 1];
-        uint16_t r = (hi) & 0xF8;
-        uint16_t g = ((hi << 5) | (lo >> 3)) & 0xFC;
-        uint16_t b = (lo << 3) & 0xF8;
-        r = (r * dimming) >> 8;
-        g = (g * dimming) >> 8;
-        b = (b * dimming) >> 8;
+        int16_t r = (hi) & 0xF8;
+        int16_t g = ((hi << 5) | (lo >> 3)) & 0xFC;
+        int16_t b = (lo << 3) & 0xF8;
+        if (hue_shift != 0) {
+          int32_t nr = ((int32_t)hue_matrix[0]*r + (int32_t)hue_matrix[1]*g + (int32_t)hue_matrix[2]*b) >> 8;
+          int32_t ng = ((int32_t)hue_matrix[3]*r + (int32_t)hue_matrix[4]*g + (int32_t)hue_matrix[5]*b) >> 8;
+          int32_t nb = ((int32_t)hue_matrix[6]*r + (int32_t)hue_matrix[7]*g + (int32_t)hue_matrix[8]*b) >> 8;
+          r = nr < 0 ? 0 : (nr > 255 ? 255 : nr);
+          g = ng < 0 ? 0 : (ng > 255 ? 255 : ng);
+          b = nb < 0 ? 0 : (nb > 255 ? 255 : nb);
+        }
+        if (dimming < 255) {
+          r = (r * dimming) >> 8;
+          g = (g * dimming) >> 8;
+          b = (b * dimming) >> 8;
+        }
         uint16_t px = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
         raw[i] = px & 0xFF;
         raw[i + 1] = px >> 8;

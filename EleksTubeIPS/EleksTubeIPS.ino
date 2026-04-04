@@ -158,8 +158,10 @@ void setup() {
     delay(200);
   }
 
-  // Set the active clock face graphics from the saved configuration
+  // Set the active clock face graphics and hue shift from saved configuration
   tfts.current_graphic = uclock.getActiveGraphicIdx();
+  tfts.hue_shift = stored_config.config.uclock.hue_shift;
+  tfts.computeHueMatrix(tfts.hue_shift);
 
   // Clear boot messages and show the clock for the first time.
   // TFTs::force bypasses the "only update if digit changed" optimization
@@ -202,10 +204,15 @@ void loop() {
   // Check for hour transitions to apply night/day brightness changes
   EveryFullHour();
 
-  // Push any changed digits to the TFT displays. In normal mode (TFTs::yes),
-  // only digits that actually changed are redrawn, avoiding SPI bus overhead
-  // and visible flicker.
-  updateClockDisplay();
+  // If a time jump was detected (NTP correction, timezone change, etc.),
+  // force-redraw all six displays so hours/minutes update immediately.
+  if (uclock.force_redraw) {
+    uclock.force_redraw = false;
+    updateClockDisplay(TFTs::force);
+  } else {
+    // Normal mode: only redraw digits whose value actually changed
+    updateClockDisplay();
+  }
 
   // --- Phase 2: Menu state machine ---
   // Process menu events only if the state just changed AND displays are on.

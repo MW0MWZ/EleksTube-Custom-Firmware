@@ -72,6 +72,11 @@ public:
   // Force NTP sync now (called from web UI or button press)
   bool forceNTPSync();
 
+  // Set by loop() when a time jump > 2 seconds is detected (NTP correction,
+  // timezone change, etc.). The main loop checks this and force-redraws all
+  // six displays so that hours/minutes update immediately, not just seconds.
+  bool force_redraw = false;
+
 private:
   time_t loop_time, local_time;
   bool time_valid;

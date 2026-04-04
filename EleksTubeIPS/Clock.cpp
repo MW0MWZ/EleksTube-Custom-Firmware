@@ -88,6 +88,7 @@ void Clock::begin(StoredConfig::Config::Clock *config_) {
     config->day_tft_intensity = 255;
     config->night_tft_intensity = TFT_DIMMED_INTENSITY;
     config->night_led_intensity = BACKLIGHT_DIMMED_INTENSITY;
+    config->hue_shift = 0;
     config->is_valid = StoredConfig::valid;
   }
 
@@ -125,6 +126,8 @@ void Clock::loop() {
   if (timeStatus() == timeNotSet) {
     time_valid = false;
   } else {
+    time_t prev_local = local_time;
+
     // now() returns UTC from TimeLib
     loop_time = now();
 
@@ -158,6 +161,17 @@ void Clock::loop() {
       // Fallback: use the legacy manual offset (no DST support)
       local_time = loop_time + config->time_zone_offset;
     }
+
+    // Detect time jumps from NTP correction, timezone change, or RTC reset.
+    // Normal ticking advances by exactly 0 or 1 second per loop. Anything
+    // larger means the time source changed — force all displays to redraw
+    // so hours and minutes update immediately, not just seconds.
+    time_t jump = local_time - prev_local;
+    if (prev_local != 0 && (jump > 2 || jump < -2)) {
+      force_redraw = true;
+      Serial.printf("Time jump detected: %ld seconds, forcing display refresh\n", (long)jump);
+    }
+
     time_valid = true;
   }
 }
@@ -262,6 +276,9 @@ bool Clock::forceNTPSync() {
     // and by handleGetStatus() for the displayed time).
     struct timeval tv = { .tv_sec = ntp_now, .tv_usec = 0 };
     settimeofday(&tv, NULL);
+    // Update TimeLib directly so now() returns the correct time
+    // immediately rather than waiting for the next sync interval.
+    setTime(ntp_now);
     millis_last_ntp = millis();
     Serial.print("NTP sync OK: ");
     Serial.println(ntpTimeClient.get_formatted_time());

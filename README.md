@@ -42,15 +42,16 @@ Each variant has different GPIO pin assignments configured automatically in `GLO
 - **Connection watchdog** — detects and recovers stale connections
 
 ### Time & Timezone
-- **NTP time sync** with hardware RTC fallback (syncs hourly, uses RTC between syncs)
+- **NTP time sync** with hardware RTC fallback (syncs hourly, uses RTC between syncs, force-redraws all displays on time correction)
 - **POSIX timezone support** with automatic DST handling — select your region from a dropdown and DST transitions are handled automatically
 - **Browser timezone detection** — the web UI detects your browser's timezone and offers to apply it
 - **Manual NTP sync** button in the web UI
 - **45+ timezone presets** covering all major regions worldwide
 
 ### Display
-- **Multiple clock face graphics** stored on SPIFFS, with live previews in the web UI
-- **Configurable display brightness** via slider (0-255)
+- **Multiple clock face graphics** stored on SPIFFS, with clickable live previews in the web UI
+- **Display hue shift** — rotate the colour of any clock face through 360 degrees (e.g., warm nixie orange → cool blue or green) using a real-time RGB rotation matrix, without modifying image files
+- **Configurable display brightness** via percentage slider (0-100%)
 - **12/24 hour mode** and leading zero blanking
 - **Image pre-loading** for smooth second transitions
 
@@ -70,17 +71,18 @@ Each variant has different GPIO pin assignments configured automatically in `GLO
 - **SHA-256 hashed** password storage with constant-time comparison — never stored in plaintext, resistant to timing attacks
 - **Session cookies** (HttpOnly, SameSite=Strict) — secure session management
 - **Login overlay** — clean full-screen login form when password is set
+- **Logout button** — one-click session logout from the dashboard header
 - **Password management** — set, change (requires current password), or remove from the dashboard
 - **Confirm password** field with client-side match validation
 - **Physical factory reset** — accessible from the button menu to recover from a forgotten password
 
-### OTA Firmware Updates
+### OTA Updates
 - **Update over WiFi** — no USB cable needed after initial setup
-- **Upload from browser** — download the latest `.bin` from [GitHub Releases](../../releases) and upload via the dashboard's Firmware Update section
+- **Firmware and SPIFFS** — upload either a firmware `.bin` or a SPIFFS image through the same upload button; the file type is auto-detected from the ESP32 magic byte
 - **Progress bar** with percentage during upload
 - **Safe dual-partition** — new firmware is written to the inactive partition; old firmware is preserved if the update fails
-- **Firmware validation** — ESP32 magic byte check and partition size limit prevent corrupt or oversized uploads
-- **Security wipe** — all stored config (WiFi credentials, passwords) is erased after OTA update to prevent malicious firmware from inheriting credentials
+- **Image validation** — partition size checks prevent oversized uploads; firmware magic byte detection routes to the correct flash partition
+- **Security wipe** — all stored config (WiFi credentials, passwords) is erased after firmware OTA to prevent malicious firmware from inheriting credentials (SPIFFS updates preserve config)
 - **Version display** — current firmware version shown in the status panel
 - **CI/CD** — GitHub Actions builds firmware automatically from tagged releases
 
@@ -98,7 +100,7 @@ Each variant has different GPIO pin assignments configured automatically in `GLO
 - **POST body size limits** — incoming request bodies capped to prevent memory exhaustion
 - **Timezone whitelist** — timezone selections checked against a compiled-in whitelist of valid POSIX TZ strings
 - **Dashboard authentication** — optional password with SHA-256 hashing, constant-time comparison, and secure session cookies
-- **OTA validation** — firmware magic byte and partition size checks prevent malicious or corrupt uploads
+- **OTA validation** — auto-detection of firmware vs SPIFFS images, partition size checks, and magic byte validation prevent malicious or corrupt uploads
 - **Endpoint protection** — config, scan, and face preview endpoints require authentication; status endpoint returns limited info when unauthenticated
 
 ### Persistent Settings
@@ -126,7 +128,15 @@ Once the clock is running, future firmware updates can be done over WiFi — no 
 5. The progress bar will show upload status
 6. The clock will reboot with the new firmware and enter AP setup mode
 
-**Note:** For security, all stored settings (WiFi credentials, dashboard password, timezone) are wiped after an OTA update. You will need to reconfigure via the captive portal.
+**Note:** For security, all stored settings (WiFi credentials, dashboard password, timezone) are wiped after a firmware OTA update. You will need to reconfigure via the captive portal.
+
+### Updating Clock Faces (OTA)
+
+New clock face images can also be uploaded over WiFi without a USB cable:
+
+1. Build a SPIFFS image: `mkspiffs -c EleksTubeIPS/data -b 4096 -p 256 -s 0x120000 spiffs.bin`
+2. Upload `spiffs.bin` through the same **Firmware Update** section in the dashboard
+3. The file type is detected automatically — SPIFFS uploads preserve all settings
 
 ### Building
 

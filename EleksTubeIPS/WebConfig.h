@@ -57,6 +57,7 @@ private:
   size_t ota_bytes_written = 0;
   bool ota_success = false;
   bool ota_authenticated = false;
+  bool ota_is_spiffs = false;       // true if uploading SPIFFS image, false for firmware
 
   // --- REST API handlers ---
   void handleRoot();

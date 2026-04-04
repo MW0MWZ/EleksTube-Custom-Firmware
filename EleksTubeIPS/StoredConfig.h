@@ -94,6 +94,7 @@ public:
       uint8_t  day_tft_intensity;    // daytime TFT brightness (0-255)
       uint8_t  night_tft_intensity;  // night TFT brightness (0-255)
       uint8_t  night_led_intensity;  // night backlight LED brightness (0-7)
+      uint16_t hue_shift;            // display hue rotation in degrees (0-359, 0 = off)
       uint8_t  is_valid;
     } uclock;
 

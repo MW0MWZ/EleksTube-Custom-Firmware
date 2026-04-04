@@ -67,9 +67,14 @@ static const char html_page[] PROGMEM = R"rawliteral(
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .3s,color .3s}
 .container{max-width:480px;margin:0 auto;padding:60px 16px 16px}
+.grid{display:flex;flex-direction:column}
+.grid>div{display:contents}
+#card-wifi{order:-1}
 @media(min-width:768px){
 .container{max-width:960px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid>div{display:block}
+#card-wifi{order:0}
 .grid .full{grid-column:1/-1}
 }
 .hdr{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--card-border);transition:background .3s}
@@ -150,6 +155,7 @@ button{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.
 <h1 id="devname">EleksTube IPS Clock</h1>
 <button class="btn-save" onclick="saveConfig()">Save</button>
 <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme" id="themeBtn">&#9790;</button>
+<button class="btn-icon" onclick="doLogout()" title="Logout" id="logoutBtn" style="display:none"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
 </div>
 </div>
 <div id="toast-stack" class="toast-stack"></div>
@@ -165,21 +171,6 @@ button{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.
 
 <div class="grid">
 <div>
-<div class="card">
-<h2>WiFi</h2>
-<div class="row">
-<div><label>SSID</label><input type="text" id="ssid" autocomplete="off" oninput="markDirty()"></div>
-<button class="btn-sm" onclick="scanWifi()">Scan</button>
-</div>
-<div id="networks" style="display:none"><label>Networks</label><select id="netlist" onchange="document.getElementById('ssid').value=this.value"></select></div>
-<label>Password</label>
-<input type="password" id="pass" maxlength="31" oninput="markDirty()">
-<div class="opt-row" style="margin-top:10px">
-<span>Onboard AP</span>
-<label class="sw"><input type="checkbox" id="ap_toggle" onchange="toggleAP()"><span class="slider"></span></label>
-</div>
-</div>
-
 <div class="card">
 <h2>Timezone</h2>
 <div id="tz_detect" class="status" style="margin-bottom:6px;display:none;align-items:center;gap:6px"><span>Detected: </span><span class="val" id="tz_browser">--</span> <button class="btn-sm" onclick="useDetectedTZ()" style="padding:3px 8px;font-size:.8em">Use</button></div>
@@ -201,9 +192,10 @@ button{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.
 </div>
 <label>Clock Face</label>
 <div class="faces" id="face_preview"></div>
-<select id="graphic" onchange="syncFaceSelection(this.value);previewFace(this.value)"></select>
-<label>Display brightness <span id="day_tft_val" style="color:var(--accent)">255</span>/255</label>
-<input type="range" id="day_tft" min="1" max="255" value="255" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('day_tft_val').textContent=this.value;previewTFT()">
+<label>Display hue shift <span id="hue_val" style="color:var(--accent)">0</span>&deg;</label>
+<input type="range" id="hue_shift" min="0" max="359" value="0" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('hue_val').textContent=this.value;previewHue()">
+<label>Display brightness <span id="day_tft_val" style="color:var(--accent)">100</span>%</label>
+<input type="range" id="day_tft" min="1" max="100" value="100" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('day_tft_val').textContent=this.value;previewTFT()">
 <label>Filament Glow / Rear LED brightness <span id="led_int_val" style="color:var(--accent)">7</span>/7</label>
 <input type="range" id="led_int" min="0" max="7" value="7" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('led_int_val').textContent=this.value;previewLED()">
 <label>Filament Glow / Rear LED pattern</label>
@@ -249,8 +241,8 @@ button{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.
 <div><label>Dim at (hour)</label><input type="text" id="night_time" style="width:70px" inputmode="numeric" oninput="markDirty()"></div>
 <div><label>Bright at (hour)</label><input type="text" id="day_time" style="width:70px" inputmode="numeric" oninput="markDirty()"></div>
 </div>
-<label>Display brightness <span id="tft_val" style="color:var(--accent)">0</span>/255 <span style="font-size:.85em;color:var(--muted)">(0 = off)</span></label>
-<input type="range" id="night_tft" min="0" max="255" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('tft_val').textContent=this.value;markDirty()">
+<label>Display brightness <span id="tft_val" style="color:var(--accent)">0</span>% <span style="font-size:.85em;color:var(--muted)">(0% = off)</span></label>
+<input type="range" id="night_tft" min="0" max="100" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('tft_val').textContent=this.value;markDirty()">
 <label>Filament Glow / Rear LED brightness <span id="led_val" style="color:var(--accent)">0</span>/7 <span style="font-size:.85em;color:var(--muted)">(0 = off)</span></label>
 <input type="range" id="night_led" min="0" max="7" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('led_val').textContent=this.value;markDirty()">
 </div>
@@ -271,6 +263,21 @@ button{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.
 <div class="status-row"><span>Uptime</span><span class="val" id="st_up">--</span></div>
 <div class="status-row"><span>AP</span><span class="val" id="st_ap">--</span></div>
 <div class="status-row"><span>Firmware</span><span class="val" id="st_ver">--</span></div>
+</div>
+</div>
+
+<div class="card" id="card-wifi">
+<h2>WiFi</h2>
+<div class="row">
+<div><label>SSID</label><input type="text" id="ssid" autocomplete="off" oninput="markDirty()"></div>
+<button type="button" class="btn-sm" onclick="scanWifi()">Scan</button>
+</div>
+<div id="networks" style="display:none"><label>Networks</label><select id="netlist" onchange="document.getElementById('ssid').value=this.value"></select></div>
+<label>Password</label>
+<input type="password" id="pass" maxlength="31" oninput="markDirty()">
+<div class="opt-row" style="margin-top:10px">
+<span>Onboard AP</span>
+<label class="sw"><input type="checkbox" id="ap_toggle" onchange="toggleAP()"><span class="slider"></span></label>
 </div>
 </div>
 
@@ -295,7 +302,7 @@ button{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.
 
 <div class="card">
 <h2>Firmware Update</h2>
-<p style="font-size:.82em;color:var(--muted);margin-bottom:8px">Upload a .bin firmware file to update the clock over WiFi</p>
+<p style="font-size:.82em;color:var(--muted);margin-bottom:8px">Upload a .bin file to update firmware or clock faces over WiFi. The file type is detected automatically.</p>
 <input type="file" id="ota_file" accept=".bin" style="font-size:.85em;color:var(--text);margin-bottom:8px">
 <button class="btn-sm" onclick="uploadFirmware()" style="width:100%">Upload &amp; Install</button>
 <div id="ota_progress" style="display:none;margin-top:8px">
@@ -328,7 +335,7 @@ button{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.
 <div id="unsaved-bar" class="unsaved-bar">You have unsaved changes</div>
 <script>
 const TZ_LIST=[];
-let cfg={},detectedTZ=null;
+let cfg={},detectedTZ=null,selectedGraphic=1;
 
 function toggleTheme(){
  let d=document.documentElement;
@@ -406,22 +413,21 @@ async function loadConfig(){
  document.getElementById('day_time').value=cfg.day_time!=null?cfg.day_time:7;
  let ntft=cfg.night_tft!=null?cfg.night_tft:0;
  let nled=cfg.night_led!=null?cfg.night_led:0;
- document.getElementById('night_tft').value=ntft;
- document.getElementById('tft_val').textContent=ntft;
+ let ntftPct=Math.round(ntft*100/255);
+ document.getElementById('night_tft').value=ntftPct;
+ document.getElementById('tft_val').textContent=ntftPct;
  document.getElementById('night_led').value=nled;
  document.getElementById('led_val').textContent=nled;
- let gs=document.getElementById('graphic');
- gs.innerHTML='';
- for(let i=1;i<=cfg.num_faces;i++){
-  let o=document.createElement('option');
-  o.value=i;o.textContent='Face '+i;
-  gs.appendChild(o);
- }
- gs.value=cfg.graphic||1;
- loadFacePreviews(cfg.num_faces,cfg.graphic||1);
+ selectedGraphic=cfg.graphic||1;
+ loadFacePreviews(cfg.num_faces,selectedGraphic);
  let dtft=cfg.day_tft!=null?cfg.day_tft:255;
- document.getElementById('day_tft').value=dtft;
- document.getElementById('day_tft_val').textContent=dtft;
+ let dtftPct=Math.round(dtft*100/255);
+ document.getElementById('day_tft').value=dtftPct;
+ document.getElementById('day_tft_val').textContent=dtftPct;
+ let hs=cfg.hue_shift||0;
+ document.getElementById('hue_shift').value=hs;
+ document.getElementById('hue_val').textContent=hs;
+ if(hs>0) document.querySelectorAll('.faces img').forEach(img=>{img.style.filter='hue-rotate('+hs+'deg)';});
  let lint=cfg.led_intensity!=null?cfg.led_intensity:7;
  document.getElementById('led_int').value=lint;
  document.getElementById('led_int_val').textContent=lint;
@@ -446,16 +452,17 @@ async function saveConfig(){
   tz:document.getElementById('tz').value,
   twelve_hour:document.getElementById('h12').checked,
   blank_zero:document.getElementById('blankz').checked,
-  graphic:parseInt(document.getElementById('graphic').value),
+  graphic:selectedGraphic,
   night_enabled:document.getElementById('night_enabled').checked,
   night_time:parseInt(document.getElementById('night_time').value)||0,
   day_time:parseInt(document.getElementById('day_time').value)||7,
-  night_tft:parseInt(document.getElementById('night_tft').value)||0,
+  night_tft:Math.round(parseInt(document.getElementById('night_tft').value)*255/100),
   night_led:parseInt(document.getElementById('night_led').value)||0,
-  day_tft:parseInt(document.getElementById('day_tft').value)||255,
+  day_tft:Math.round(parseInt(document.getElementById('day_tft').value)*255/100)||255,
   led_intensity:parseInt(document.getElementById('led_int').value),
   led_pattern:parseInt(document.getElementById('led_pattern').value),
-  led_color:(document.getElementById('led_pattern').value!=='0'&&document.getElementById('led_pattern').value!=='3')?document.getElementById('led_color').value:''
+  led_color:(document.getElementById('led_pattern').value!=='0'&&document.getElementById('led_pattern').value!=='3')?document.getElementById('led_color').value:'',
+  hue_shift:parseInt(document.getElementById('hue_shift').value)||0
  };
  if(!body.password) delete body.password;
  try{
@@ -594,7 +601,12 @@ function previewHourFmt(){
  previewDebounce({twelve_hour:document.getElementById('h12').checked});
 }
 function previewTFT(){
- previewDebounce({day_tft:parseInt(document.getElementById('day_tft').value)});
+ previewDebounce({day_tft:Math.round(parseInt(document.getElementById('day_tft').value)*255/100)});
+}
+function previewHue(){
+ let deg=document.getElementById('hue_shift').value;
+ document.querySelectorAll('.faces img').forEach(img=>{img.style.filter=deg>0?'hue-rotate('+deg+'deg)':'';});
+ previewDebounce({hue_shift:parseInt(deg)});
 }
 function previewFace(v){
  previewDebounce({graphic:parseInt(v)});
@@ -679,16 +691,16 @@ function syncFaceSelection(v){
 function loadFacePreviews(n,sel){
  let c=document.getElementById('face_preview');
  c.innerHTML='';
- let gs=document.getElementById('graphic');
  for(let i=1;i<=n;i++){
   let img=document.createElement('img');
   img.src='/api/face?f='+i;
   img.alt='Face '+i;
   img.dataset.face=i;
-  img.style.cssText='height:auto;background:#000;width:calc((100% - '+((n-1)*8)+'px) / '+n+')';
+  let hd=document.getElementById('hue_shift').value;
+  img.style.cssText='height:auto;background:#000;width:calc((100% - '+((n-1)*8)+'px) / '+n+')'+(hd>0?';filter:hue-rotate('+hd+'deg)':'');
   if(i===sel) img.classList.add('sel');
   img.onclick=(()=>{let fi=i;return()=>{
-   gs.value=fi;
+   selectedGraphic=fi;
    syncFaceSelection(fi);
    previewFace(fi);
   }})();
@@ -793,6 +805,11 @@ async function uploadFirmware(){
  }catch(e){showMsg('Upload error','err');}
 }
 
+async function doLogout(){
+ try{await secPost('/api/logout');}catch(e){}
+ location.reload();
+}
+
 // Init -- check auth state before loading the main UI
 if(AUTH_REQUIRED && !HAS_SESSION){
  document.getElementById('login-overlay').style.display='flex';
@@ -801,6 +818,7 @@ if(AUTH_REQUIRED && !HAS_SESSION){
  loadStatus();
 }
 updatePwUI(AUTH_REQUIRED);
+if(AUTH_REQUIRED && HAS_SESSION) document.getElementById('logoutBtn').style.display='';
 buildColourPicker();
 setInterval(loadStatus,5000);
 </script>
@@ -1087,6 +1105,15 @@ void WebConfig::begin(StoredConfig *sc) {
   server.on("/api/login", HTTP_POST, [this]() { handleLogin(); });
   server.on("/api/set_password", HTTP_POST, [this]() { handleSetPassword(); });
 
+  // Logout -- clears the session cookie and token
+  server.on("/api/logout", HTTP_POST, [this]() {
+    if (!validate_request()) return;
+    session_token[0] = '\0';
+    String cookie = "session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
+    server.sendHeader("Set-Cookie", cookie);
+    server.send(200, "application/json", "{\"msg\":\"Logged out\",\"ok\":true}");
+  });
+
   // OTA firmware upload -- uses the WebServer's built-in upload handler
   // for streaming multipart/form-data file uploads. The first lambda handles
   // the final response, the second handles each data chunk as it arrives.
@@ -1269,6 +1296,7 @@ void WebConfig::handleGetConfig() {
   doc["night_tft"] = config->uclock.night_tft_intensity;
   doc["night_led"] = config->uclock.night_led_intensity;
   doc["day_tft"] = config->uclock.day_tft_intensity;
+  doc["hue_shift"] = config->uclock.hue_shift;
   doc["led_intensity"] = config->backlights.intensity;
   doc["led_pattern"] = config->backlights.pattern;
   // Convert the stored 24-bit RGB integer to a CSS hex color string
@@ -1410,6 +1438,15 @@ void WebConfig::handleSetConfig() {
   if (doc.containsKey("day_tft")) {
     uint8_t dtft = doc["day_tft"];
     if (dtft >= 1) config->uclock.day_tft_intensity = dtft;
+  }
+  if (doc.containsKey("hue_shift")) {
+    uint16_t hs = doc["hue_shift"];
+    if (hs < 360) {
+      config->uclock.hue_shift = hs;
+      tfts.hue_shift = hs;
+      tfts.computeHueMatrix(hs);
+      tfts.InvalidateImageInBuffer();
+    }
   }
 
   // --- Backlight LED settings ---
@@ -1675,6 +1712,18 @@ void WebConfig::handlePreview() {
     redraw_all = true;
   }
 
+  // Apply hue shift immediately
+  if (doc.containsKey("hue_shift")) {
+    uint16_t hs = doc["hue_shift"];
+    if (hs < 360) {
+      config->uclock.hue_shift = hs;
+      tfts.hue_shift = hs;
+      tfts.computeHueMatrix(hs);
+      tfts.InvalidateImageInBuffer();
+      redraw_all = true;
+    }
+  }
+
   // Apply clock face selection immediately
   if (doc.containsKey("graphic")) {
     int8_t g = doc["graphic"];
@@ -1745,22 +1794,28 @@ void WebConfig::handlePreview() {
   }
 }
 
-// POST /api/ota -- Final response handler after upload completes
 // POST /api/ota — completion handler. Runs after all upload chunks are processed.
 // Auth was already checked in handleOTAUploadData at UPLOAD_FILE_START.
+// Handles both firmware and SPIFFS uploads (auto-detected from magic byte).
 void WebConfig::handleOTAUpload() {
   if (!ota_authenticated) {
     server.send(403, "application/json", "{\"msg\":\"Session expired — please reload and log in again\"}");
     return;
   }
   if (ota_success) {
-    // Security: wipe all stored config (WiFi credentials, dashboard password,
-    // etc.) before booting the new firmware. This prevents a malicious firmware
-    // image from inheriting the user's network access.
-    storedConfig->factory_reset();
-    Serial.println("OTA: config wiped for security");
-
-    server.send(200, "application/json", "{\"msg\":\"Update successful. Rebooting...\",\"ok\":true}");
+    if (ota_is_spiffs) {
+      // SPIFFS update: just reboot to remount with new images.
+      // No config wipe — SPIFFS only contains clock face graphics.
+      Serial.println("OTA: SPIFFS update complete");
+      server.send(200, "application/json", "{\"msg\":\"Clock faces updated. Rebooting...\",\"ok\":true}");
+    } else {
+      // Firmware update: wipe all stored config (WiFi credentials, dashboard
+      // password, etc.) before booting the new firmware. This prevents a
+      // malicious firmware image from inheriting the user's network access.
+      storedConfig->factory_reset();
+      Serial.println("OTA: config wiped for security");
+      server.send(200, "application/json", "{\"msg\":\"Firmware updated. Rebooting...\",\"ok\":true}");
+    }
     server.client().flush();
     delay(500);
     ESP.restart();
@@ -1769,7 +1824,10 @@ void WebConfig::handleOTAUpload() {
   }
 }
 
-// Called by the WebServer for each chunk of the uploaded firmware file.
+// Called by the WebServer for each chunk of the uploaded file.
+// Auto-detects firmware vs SPIFFS from the first byte:
+//   0xE9 = ESP32 firmware → flash to app partition (U_FLASH)
+//   anything else = SPIFFS image → flash to SPIFFS partition (U_SPIFFS)
 // Streams directly to flash — no need to buffer the entire file in RAM.
 // Auth and CSRF are checked on the first chunk (UPLOAD_FILE_START).
 // Do NOT call server.send() in this handler — the completion handler
@@ -1779,6 +1837,7 @@ void WebConfig::handleOTAUploadData() {
 
   if (upload.status == UPLOAD_FILE_START) {
     ota_success = false;
+    ota_is_spiffs = false;
     ota_bytes_written = 0;
     // Check auth and CSRF. Do not send a response here — the completion
     // handler will send 403 if ota_authenticated is false.
@@ -1792,29 +1851,64 @@ void WebConfig::handleOTAUploadData() {
     }
     ota_authenticated = true;
     Serial.printf("OTA: receiving %s\n", upload.filename.c_str());
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-      Serial.println("OTA: Update.begin() failed");
-      Update.printError(Serial);
-      ota_success = false;
-    }
+    // Update.begin() is deferred to the first WRITE chunk so we can
+    // inspect the magic byte and choose firmware vs SPIFFS mode.
 
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (!ota_authenticated) return;  // Skip data if auth failed
-    // Validate ESP32 firmware magic byte (0xE9) on first chunk
-    if (ota_bytes_written == 0 && upload.currentSize > 0 && upload.buf[0] != 0xE9) {
-      Serial.println("OTA: invalid firmware magic byte");
-      Update.abort();
-      ota_success = false;
-      return;
+    if (!ota_authenticated) return;
+
+    // First chunk: detect image type from magic byte and begin the update
+    if (ota_bytes_written == 0 && upload.currentSize > 0) {
+      if (upload.buf[0] == 0xE9) {
+        // ESP32 firmware image
+        ota_is_spiffs = false;
+        Serial.println("OTA: detected firmware image");
+
+        // Validate file size from Content-Length if available.
+        // upload.totalSize is not available until UPLOAD_FILE_END, but
+        // we enforce the cap per-chunk below.
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+          Serial.println("OTA: Update.begin(U_FLASH) failed");
+          Update.printError(Serial);
+          ota_success = false;
+          return;
+        }
+      } else {
+        // Not firmware — treat as SPIFFS image
+        ota_is_spiffs = true;
+        Serial.println("OTA: detected SPIFFS image");
+
+        // Look up the SPIFFS partition to get its exact size for validation
+        const esp_partition_t *spiffs_part = esp_partition_find_first(
+          ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, NULL);
+        if (!spiffs_part) {
+          Serial.println("OTA: no SPIFFS partition found");
+          ota_success = false;
+          return;
+        }
+        Serial.printf("OTA: SPIFFS partition size: 0x%X (%u bytes)\n",
+                       spiffs_part->size, spiffs_part->size);
+
+        if (!Update.begin(spiffs_part->size, U_SPIFFS)) {
+          Serial.println("OTA: Update.begin(U_SPIFFS) failed");
+          Update.printError(Serial);
+          ota_success = false;
+          return;
+        }
+      }
     }
-    // Cap total upload size at app partition size (0x160000 = 1,441,792 bytes)
+
+    // Enforce partition size cap
+    size_t max_size = ota_is_spiffs ? 0x120000 : 0x160000;
     ota_bytes_written += upload.currentSize;
-    if (ota_bytes_written > 0x160000) {
-      Serial.println("OTA: firmware too large for partition");
+    if (ota_bytes_written > max_size) {
+      Serial.printf("OTA: image too large for %s partition (%u > 0x%X)\n",
+                     ota_is_spiffs ? "SPIFFS" : "app", ota_bytes_written, max_size);
       Update.abort();
       ota_success = false;
       return;
     }
+
     if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       Serial.println("OTA: write failed");
       Update.printError(Serial);
@@ -1824,7 +1918,8 @@ void WebConfig::handleOTAUploadData() {
   } else if (upload.status == UPLOAD_FILE_END) {
     if (!ota_authenticated) return;
     if (Update.end(true)) {
-      Serial.printf("OTA: success, %u bytes\n", upload.totalSize);
+      Serial.printf("OTA: %s update success, %u bytes\n",
+                     ota_is_spiffs ? "SPIFFS" : "firmware", upload.totalSize);
       ota_success = true;
     } else {
       Serial.println("OTA: finalize failed");

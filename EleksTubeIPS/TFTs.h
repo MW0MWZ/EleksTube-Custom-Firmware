@@ -53,6 +53,16 @@ public:
   // Applied during image loading by scaling each RGB channel.
   uint8_t dimming = 255;
 
+  // Hue rotation angle in degrees (0 = original colours, 0-359).
+  // Applied per-pixel during image loading using a precomputed RGB
+  // rotation matrix. Call computeHueMatrix() after changing this.
+  uint16_t hue_shift = 0;
+
+  // Precompute the 3x3 hue rotation matrix from an angle in degrees.
+  // Must be called whenever hue_shift changes. The matrix is stored
+  // as Q8 fixed-point (multiply then >>8) for fast integer math.
+  void computeHueMatrix(uint16_t angle_deg);
+
   // Index of the currently selected clock face (font set). Each clock face
   // contains 10 digit images (0-9). File index = current_graphic * 10 + digit.
   uint8_t current_graphic = 1;
@@ -89,6 +99,11 @@ private:
   void DrawImage(uint8_t file_index);
   uint16_t read16(fs::File &f);
   uint32_t read32(fs::File &f);
+
+  // Precomputed hue rotation matrix in Q8 fixed-point.
+  // Layout: [m00,m01,m02, m10,m11,m12, m20,m21,m22]
+  // Identity when hue_shift == 0.
+  int16_t hue_matrix[9];
 
   // Full-frame pixel buffer shared across all displays.
   // Static because only one image is in memory at a time (we draw to one
